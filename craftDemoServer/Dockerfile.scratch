@@ -1,0 +1,6 @@
+FROM scratch
+ADD server.crt /
+ADD server.key /
+ADD incidentsStore/servicenowStore/incidents.json /
+ADD main /
+CMD ["/main"]
