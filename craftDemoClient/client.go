@@ -217,6 +217,7 @@ func main() {
 	fmt.Printf("Goroutine count %d\n", countGoRoutines())
 
 	// Read the body
+	// TODO - split readAll
 	body, readErr := ioutil.ReadAll(res.Body)
 	if readErr != nil {
 		log.Fatal(readErr)
@@ -231,8 +232,11 @@ func main() {
 	}
 
 	// print the tableFormat of the incidents report
-	tableFmt := tableFormat.Format(incidents.Report)
-	fmt.Printf("%s\n",tableFmt)
+	tableFmt, err := tableFormat.Format(incidents.Report)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Printf("%s\n",*tableFmt)
 
 	// generate aggregated report based on priority
 	aggReport, err := generateAggReportPriority(incidents.Report)
@@ -240,8 +244,11 @@ func main() {
 		log.Fatal(err)
 	}
 
-	aggTableFmt := tableFormat.Format(*aggReport)
-	fmt.Printf("%s\n",aggTableFmt)
+	aggTableFmt, err := tableFormat.Format(*aggReport)
+	fmt.Printf("%s\n",*aggTableFmt)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	// print the final count of go routines
 	fmt.Printf("Goroutine count %d\n",countGoRoutines())
