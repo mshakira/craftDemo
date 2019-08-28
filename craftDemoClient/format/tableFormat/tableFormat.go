@@ -8,20 +8,31 @@ import (
 )
 
 const (
-	MAX_COLUMN_LENGTH = 60
-	COLUMN_PADDING = 2
+	MaxColumnLength = 60
+	ColumnPadding   = 2
 )
-
+/*
+Format function formats the given data into table format.
+It backtracks the input's type using reflect and extracts its headers and contents
+To print in table format, we need following details
+1) Max width of each column
+2) Column headers
+3) Column values
+ */
 func Format(in interface{}) string {
-
-	val := reflect.ValueOf(in)
+	// output format string
+	var format string
 
 	//fmt.Printf("value is %v\n",val.Type().Kind())
-	// to calculate the max length of each column
+	// Initialize
+	//    1) Max width of each column
+	//    2) Column headers
+	//    3) Column values
 	m := make(map[string]int)
-
 	var header []string
 	var contents [][]string
+
+	val := reflect.ValueOf(in)
 
 	for j := 0;j< val.Len(); j++ {
 		v := val.Index(j)
@@ -68,36 +79,36 @@ func Format(in interface{}) string {
 	total := 0
 	for n := range header {
 		// If length of column is > MAX_COLUMN_LENGTH, replace it with MAX_COLUMN_LENGTH
-		if m[header[n]] > MAX_COLUMN_LENGTH {
-			m[header[n]] = MAX_COLUMN_LENGTH
+		if m[header[n]] > MaxColumnLength {
+			m[header[n]] = MaxColumnLength
 		}
-		total += m[header[n]] + 1 + COLUMN_PADDING
+		total += m[header[n]] + 1 + ColumnPadding
 		//fmt.Printf("%v\n",header[n])
-		inter = append(inter,m[header[n]]+COLUMN_PADDING)
-		if len(header[n]) > MAX_COLUMN_LENGTH {
-			inter = append(inter, header[n][:MAX_COLUMN_LENGTH])
+		inter = append(inter,m[header[n]]+ColumnPadding)
+		if len(header[n]) > MaxColumnLength {
+			inter = append(inter, header[n][:MaxColumnLength])
 		} else {
 			inter = append(inter, header[n])
 		}
 	}
 	str := strings.Repeat("%-*s ",len(header))
 
-	fmt.Printf(str + "\n",inter...)
-	fmt.Printf(strings.Repeat("#",total) + "\n")
+	format += fmt.Sprintf(str + "\n",inter...)
+	format += fmt.Sprintf(strings.Repeat("#",total) + "\n")
 	for mn:= range contents {
 		row := contents[mn]
 
 		var inter []interface{}
 		for n := range header {
-			inter = append(inter,m[header[n]]+COLUMN_PADDING)
-			if len(row[n]) > MAX_COLUMN_LENGTH {
-				inter = append(inter, row[n][:MAX_COLUMN_LENGTH])
+			inter = append(inter,m[header[n]]+ColumnPadding)
+			if len(row[n]) > MaxColumnLength {
+				inter = append(inter, row[n][:MaxColumnLength])
 			} else {
 				inter = append(inter, row[n])
 			}
 		}
-		fmt.Printf(str + "\n",inter...)
+		format += fmt.Sprintf(str + "\n",inter...)
 	}
 
-	return ""
+	return format
 }
