@@ -18,16 +18,18 @@ import (
 )
 
 const (
-	TIMEOUT = 2 // no of secs for url timeout
-	RETRY = 5 // no of retries for url failures
-	NUM_GO_ROUTINES = 3 // maximum number of go routines to fan out
+	TIMEOUT       = 2 // no of secs for url timeout
+	RETRY         = 5 // no of retries for url failures
+	NumGoRoutines = 10 // maximum number of go routines to fan out
 )
 
+// Incidents Json structure
 type Incidents struct {
 	Name   string     `json:"Name"`
 	Report []Incident `json:"Report"`
 }
 
+// Individual inc structure
 type Incident struct {
 	Number      string `json:"number"`
 	AssignedTo  string `json:"assigned_to"`
@@ -37,59 +39,15 @@ type Incident struct {
 	Severity    string `json:"severity"`
 }
 
+// Aggregated report structure based on priority
 type PrioritySum struct {
 	Priority string
 	Sum      int
 }
 
+// To verify if go routine leaks are there
 func countGoRoutines() int {
 	return runtime.NumGoroutine()
-}
-
-func mapFunc(ctx context.Context, priority string) <-chan map[string]int {
-	out := make(chan map[string]int)
-	go func() {
-		defer close(out)
-		m := make(map[string]int)
-		m[priority] = 1
-		select {
-		case out <- m:
-		case <-ctx.Done():
-			return // returning not to leak the goroutine
-		}
-	}()
-	return out
-}
-
-func ReduceFunc(ctx context.Context, ch []<-chan map[string]int) <-chan map[string]int {
-	var wg sync.WaitGroup
-	out := make(chan map[string]int)
-
-	// Start an output goroutine for each input channel in cs.  output
-	// copies values from c to out until c is closed, then calls wg.Done.
-	output := func(c <-chan map[string]int) {
-		for n := range c {
-			select {
-			case out <- n:
-			case <-ctx.Done():
-				return // returning not to leak the goroutine
-			}
-		}
-		wg.Done()
-	}
-	wg.Add(len(ch))
-	for _, c := range ch {
-		go output(c)
-	}
-
-	// Start a goroutine to close out once all the output goroutines are
-	// done.  This must start after the wg.Add call.
-	go func() {
-		fmt.Printf("All gorountines stopped\n")
-		wg.Wait()
-		close(out)
-	}()
-	return out
 }
 
 // Initialize httpclient and request the given url
@@ -125,8 +83,10 @@ func GetResponse(url string) (res *http.Response) {
 	return res
 }
 
+// Validate the response based on response header
 func ValidateResponse(res *http.Response) (err error) {
 	var resLength int
+	// non 200 errors
 	if res.StatusCode != 200 {
 		err = errors.New(fmt.Sprintf("Received %d status code\n", res.StatusCode))
 	} else if res.Header["Content-Type"][0] != "application/json" {
@@ -182,47 +142,55 @@ func mergeIncs(incs chan map[string]int, out chan map[string]int) {
 	out <- sev
 }
 
+// Generate aggregated report based on priority
+// Send all inc details into one channel
+// Fan out that channel to bounded go routines. This will merge the values and
+// send to single output channel
+// We can have any levels of merging depending on load
 func generateAggReportPriority(report []Incident) (sum *[]PrioritySum,err error ){
-	// Send all inc details into one channel
-	// Fan out that channel to bounded go routines. This will merge the values and
-	// send to single output channel
-	// final merge will happen in single output channel
+
+	// create context with cancel to inform goroutines to exit
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	// Send all inc details into one channel incs
-
 	incs, errc := walkIncs(ctx, report)
 	if errc != nil {
 		return nil, errc
 	}
 
-	// Fan out that channel to bounded go routines. This will merge the values and
+	// Fan out the channel `incs` to bounded go routines. This will merge the values and
 	// send to single output channel
 	// This provides first level of merge on the data
 	c := make(chan map[string]int)
+	// use sync.WaitGroup for synchronization
 	var wg sync.WaitGroup
-	wg.Add(NUM_GO_ROUTINES)
+	// NumGoRoutines - controls number of goroutines that can be spawned
+	wg.Add(NumGoRoutines)
 
-	for i := 0; i < NUM_GO_ROUTINES; i++ {
+	// spawn NumGoRoutines times mergeIncs()
+	for i := 0; i < NumGoRoutines; i++ {
 		go func() {
 			mergeIncs(incs, c)
 			wg.Done()
 		}()
 	}
 
+	// wait for all goroutines to end before closing channel c
 	go func() {
 		wg.Wait()
 		close(c)
 	}()
 
-	// final merge
+	// final merge - call mergeIncs one more time for final merge
+	// make sure to close the channel
 	final := make(chan map[string]int)
 	go func() {
 		defer close(final)
 		mergeIncs(c, final)
 	}()
 
+	// read the final channel and create []PrioritySum struct
 	var sumObj []PrioritySum
 	for obj := range final {
 		for k, v := range obj {
@@ -233,6 +201,7 @@ func generateAggReportPriority(report []Incident) (sum *[]PrioritySum,err error 
 }
 
 func main() {
+	// get url as first arg
 	url := os.Args[1]
 
 	// get the response using http client
@@ -244,6 +213,7 @@ func main() {
 		log.Fatal(respErr)
 	}
 
+	// test initial no of goroutines
 	fmt.Printf("Goroutine count %d\n", countGoRoutines())
 
 	// Read the body
@@ -272,7 +242,9 @@ func main() {
 
 	aggTableFmt := tableFormat.Format(*aggReport)
 	fmt.Printf("%s\n",aggTableFmt)
-	//fmt.Printf("Goroutine count %d\n",countGoRoutines())
+
+	// print the final count of go routines
+	fmt.Printf("Goroutine count %d\n",countGoRoutines())
 	//pprof.Lookup("goroutine").WriteTo(os.Stdout, 2)
 
 }
