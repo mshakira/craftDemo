@@ -15,6 +15,11 @@ const (
 
 /*
 Format function formats the given data into table format.
+Priority   Sum
+#################
+Critical   2
+High       3
+Low        1
 It backtracks the input's type using reflect and extracts its headers and contents
 To print in table format, we need following details
 1) Max width of each column
