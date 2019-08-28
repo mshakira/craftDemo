@@ -12,7 +12,7 @@ const (
 	COLUMN_PADDING = 2
 )
 
-func Format(in interface{}) {
+func Format(in interface{}) string {
 
 	val := reflect.ValueOf(in)
 
@@ -98,4 +98,6 @@ func Format(in interface{}) {
 		}
 		fmt.Printf(str + "\n",inter...)
 	}
+
+	return ""
 }

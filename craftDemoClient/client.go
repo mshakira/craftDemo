@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"craftDemoClient/format/tableFormat"
 	"crypto/tls"
 	"encoding/json"
 	"errors"
@@ -14,6 +15,12 @@ import (
 	"strconv"
 	"sync"
 	"time"
+)
+
+const (
+	TIMEOUT = 2 // no of secs for url timeout
+	RETRY = 5 // no of retries for url failures
+	NUM_GO_ROUTINES = 3 // maximum number of go routines to fan out
 )
 
 type Incidents struct {
@@ -85,31 +92,29 @@ func ReduceFunc(ctx context.Context, ch []<-chan map[string]int) <-chan map[stri
 	return out
 }
 
+// Initialize httpclient and request the given url
+// Retry 5 times, while connecting to the server incase of error
 func GetResponse(url string) (res *http.Response) {
+	// InsecureSkipVerify to false for production
 	tr := &http.Transport{
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 	}
-
 	client := http.Client{
 		Transport: tr,
-		Timeout:   time.Second * 2, // Maximum of 2 secs
+		Timeout:   time.Second * TIMEOUT, // Maximum of 2 secs
 	}
 	req, err := http.NewRequest(http.MethodGet, url, nil)
-
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	retry := 5
-
+	retry := RETRY
 	for i := 1; i <= retry; i++ {
-
 		var getErr error
-
+		// make the request
 		res, getErr = client.Do(req)
 		if getErr != nil {
 			fmt.Printf("Attempt %d %v\n", i, getErr)
-
 			if i > retry {
 				log.Fatal(getErr)
 			}
@@ -137,94 +142,71 @@ func ValidateResponse(res *http.Response) (err error) {
 	return err
 }
 
+// walkIncs will walk through slice of incidents and sends required priority details
+// to outbound channel. Once slice values are exhausted, close the output channel
+// If done signal received, return early
 func walkIncs(ctx context.Context, report []Incident) (chan map[string]int, error) {
 	out := make(chan map[string]int)
-	defer close(out)
-	for _, obj := range report {
-		//ch := mapFunc(obj.Priority)
-		//fmt.Println(<-ch)
-		m := make(map[string]int)
-		m[obj.Priority] = 1
-		select {
-		case out <- m:
-		case <-ctx.Done():
-			return out, nil
+	go func() {
+		defer close(out)
+		for _, obj := range report {
+			m := make(map[string]int)
+			m[obj.Priority] = 1
+			select {
+			case out <- m:
+			case <-ctx.Done():
+				return
+			}
 		}
-	}
+	}()
 	return out, nil
 }
 
-func mergeIncs(ctx context.Context, incs chan map[string]int, out chan map[string]int) {
+// Merges the inputs based on priority
+// Since input and outbound channels are same, we can compose this any number of times
+// No need to close out channel because it is used by multiple go routines. Main has to close it
+// For the same reason, we do not need context or done channels
+func mergeIncs(incs chan map[string]int, out chan map[string]int) {
 	sev := make(map[string]int)
-	for {
-		select {
-		case obj := <-incs:
-			for k, v := range obj {
-				if _, ok := sev[k]; ok {
-					sev[k] += v
-				} else {
-					sev[k] = v
-				}
+	for obj := range incs {
+		for k, v := range obj {
+			// aggregate same key objects
+			if _, ok := sev[k]; ok {
+				sev[k] += v
+			} else {
+				sev[k] = v
 			}
-			case <-ctx.Done():
-				return
 		}
 	}
+	// send aggregated value
+	out <- sev
 }
 
-func main() {
-	url := os.Args[1]
-
-	res := GetResponse(url)
-
-	respErr := ValidateResponse(res)
-	if respErr != nil {
-		log.Fatal(respErr)
-	}
-
-	fmt.Printf("Goroutine count %d\n", countGoRoutines())
-
-	body, readErr := ioutil.ReadAll(res.Body)
-	if readErr != nil {
-		log.Fatal(readErr)
-	}
-
-	defer res.Body.Close()
-
-	var incidents Incidents
-
-	jsonErr := json.Unmarshal(body, &incidents)
-	if jsonErr != nil {
-		log.Fatal(jsonErr)
-	}
-	//tableFormat.Format(incidents.Report)
-
+func generateAggReportPriority(report []Incident) (sum *[]PrioritySum,err error ){
 	// Send all inc details into one channel
 	// Fan out that channel to bounded go routines. This will merge the values and
 	// send to single output channel
 	// final merge will happen in single output channel
-
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	// Send all inc details into one channel incs
-	incs, errc := walkIncs(ctx, incidents.Report)
+
+	incs, errc := walkIncs(ctx, report)
 	if errc != nil {
-		fmt.Println(errc)
-		return
+		return nil, errc
 	}
 
 	// Fan out that channel to bounded go routines. This will merge the values and
-	//	// send to single output channel
+	// send to single output channel
 	// This provides first level of merge on the data
 	c := make(chan map[string]int)
 	var wg sync.WaitGroup
-	const numMergeIncs = 3
-	wg.Add(numMergeIncs)
+	wg.Add(NUM_GO_ROUTINES)
 
-	for i := 0; i < numMergeIncs; i++ {
+	for i := 0; i < NUM_GO_ROUTINES; i++ {
 		go func() {
-			mergeIncs(ctx, incs, c)
+			mergeIncs(incs, c)
 			wg.Done()
 		}()
 	}
@@ -234,45 +216,62 @@ func main() {
 		close(c)
 	}()
 
+	// final merge
 	final := make(chan map[string]int)
 	go func() {
 		defer close(final)
-		mergeIncs(ctx, c, final)
+		mergeIncs(c, final)
 	}()
 
-	sev := make(map[string]int)
+	var sumObj []PrioritySum
 	for obj := range final {
 		for k, v := range obj {
-			fmt.Printf("New K %v v %v\n ", k, v)
+			sumObj = append(sumObj, PrioritySum{k, v})
 		}
 	}
+	return &sumObj, nil
+}
 
-	/*var ch []<-chan map[string]int
+func main() {
+	url := os.Args[1]
 
-	for _, obj := range incidents.Report {
-		//ch := mapFunc(obj.Priority)
-		//fmt.Println(<-ch)
-		ch = append(ch, mapFunc(ctx, obj.Priority))
+	// get the response using http client
+	res := GetResponse(url)
+
+	// validate response based on headers
+	respErr := ValidateResponse(res)
+	if respErr != nil {
+		log.Fatal(respErr)
 	}
-	// TODO bounded go routines
-	/*sev := make(map[string]int)
-	for obj := range ReduceFunc(ctx, ch) {
-		for k, v := range obj {
-			if _, ok := sev[k]; ok {
-				sev[k] += v
-			} else {
-				sev[k] = v
-			}
-		}
-	}*/
 
-	/*var sum []PrioritySum
+	fmt.Printf("Goroutine count %d\n", countGoRoutines())
 
-	for k, v := range sev {
-		sum = append(sum,PrioritySum{k,v})
-		//fmt.Printf("%v %v\n", k, v)
+	// Read the body
+	body, readErr := ioutil.ReadAll(res.Body)
+	if readErr != nil {
+		log.Fatal(readErr)
 	}
-	tableFormat.Format(sum)*/
+	defer res.Body.Close()
+
+	// encode the body into json with given incidents struct
+	var incidents Incidents
+	jsonErr := json.Unmarshal(body, &incidents)
+	if jsonErr != nil {
+		log.Fatal(jsonErr)
+	}
+
+	// print the tableFormat of the incidents report
+	tableFmt := tableFormat.Format(incidents.Report)
+	fmt.Printf("%s\n",tableFmt)
+
+	// generate aggregated report based on priority
+	aggReport, err := generateAggReportPriority(incidents.Report)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	aggTableFmt := tableFormat.Format(*aggReport)
+	fmt.Printf("%s\n",aggTableFmt)
 	//fmt.Printf("Goroutine count %d\n",countGoRoutines())
 	//pprof.Lookup("goroutine").WriteTo(os.Stdout, 2)
 
