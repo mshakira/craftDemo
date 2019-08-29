@@ -56,16 +56,10 @@ func TestValidateResponse(t *testing.T) {
 		t.Errorf("Expected content-type mismatch error")
 	}
 }
-func Map(m map[string]int) <-chan map[string]int {
-	ch := make(chan map[string]int)
-	go func() {
-		ch <- m
-		close(ch)
-	}()
-	return ch
-}
 
-func TestReduceFunc(t *testing.T) {
+func TestMergeIncs(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
 	m := make(map[string]int)
 	m["High"] = 1
@@ -82,7 +76,7 @@ func TestReduceFunc(t *testing.T) {
 
 	go func() {
 		defer close(out)
-		mergeIncs(ch,out)
+		mergeIncs(ctx,ch,out)
 	}()
 
 	in := 0
@@ -94,6 +88,27 @@ func TestReduceFunc(t *testing.T) {
 			}
 		} else {
 			t.Errorf("Expected `High` key, but not found")
+		}
+	}
+
+	if in != 1 {
+		t.Errorf("Expected 1, got %v\n", in)
+	}
+
+}
+
+func TestGenerateAggReportPriority(t *testing.T) {
+	obj := []Incident{{"a", "b", "c", "d", "High", "f"},
+		{"b", "b", "c", "d", "High", "f"}}
+	sum, err := GenerateAggReportPriority(obj)
+	if err != nil {
+		t.Errorf("Expected nil, got %v\n", err)
+	}
+	in := 0
+	for _, elem := range *sum {
+		in++
+		if elem.Sum != 2 {
+			t.Errorf("Expected 2, got %v\n", elem.Sum)
 		}
 	}
 

@@ -151,7 +151,7 @@ func mergeIncs(ctx context.Context, incs chan map[string]int, out chan map[strin
 // Fan out that channel to bounded go routines. This will merge the values and
 // send to single output channel
 // We can have any levels of merging depending on load
-func generateAggReportPriority(report []Incident) (sum *[]PrioritySum,err error ){
+func GenerateAggReportPriority(report []Incident) (sum *[]PrioritySum,err error ){
 
 	// create context with cancel to inform goroutines to exit
 	ctx, cancel := context.WithCancel(context.Background())
@@ -243,7 +243,7 @@ func main() {
 	fmt.Printf("%s\n",*tableFmt)
 
 	// generate aggregated report based on priority
-	aggReport, err := generateAggReportPriority(incidents.Report)
+	aggReport, err := GenerateAggReportPriority(incidents.Report)
 	if err != nil {
 		log.Fatal(err)
 	}
