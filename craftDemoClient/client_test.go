@@ -8,14 +8,17 @@ import (
 	"testing"
 )
 
-func TestMapFunc(t *testing.T) {
+func TestWalkIncs(t *testing.T) {
 	// given string, it should send the string to output channel
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	str := "High"
+	obj := []Incident{{"a", "b", "c", "d", "High", "f"}}
 
-	out := mapFunc(ctx, str)
+	out, err := walkIncs(ctx, obj)
+	if err != nil {
+		t.Errorf("Expected nil, got %v\n", err)
+	}
 
 	for n := range out {
 		if v, ok := n["High"]; ok {
@@ -53,7 +56,7 @@ func TestValidateResponse(t *testing.T) {
 		t.Errorf("Expected content-type mismatch error")
 	}
 }
-func Map(m map[string]int) <-chan map[string]int  {
+func Map(m map[string]int) <-chan map[string]int {
 	ch := make(chan map[string]int)
 	go func() {
 		ch <- m
@@ -63,35 +66,39 @@ func Map(m map[string]int) <-chan map[string]int  {
 }
 
 func TestReduceFunc(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 
 	m := make(map[string]int)
 	m["High"] = 1
 
-	ch1 := Map(m)
-	ch2 := Map(m)
+	ch := make(chan map[string]int)
 
-	ch := make([]<-chan map[string]int,2)
-	ch[0] = ch1
-	ch[1] = ch2
+	go func() {
+		ch <- m
+		ch <- m
+		close(ch)
+	}()
 
-	out := ReduceFunc(ctx,ch)
+	out := make(chan map[string]int)
+
+	go func() {
+		defer close(out)
+		mergeIncs(ch,out)
+	}()
 
 	in := 0
 	for n := range out {
 		if v, ok := n["High"]; ok {
 			in++
-			if v != 1 {
-				t.Errorf("Expected 1, got %v\n", v)
+			if v != 2 {
+				t.Errorf("Expected 2, got %v\n", v)
 			}
 		} else {
 			t.Errorf("Expected `High` key, but not found")
 		}
 	}
 
-	if in != 2 {
-		t.Errorf("Expected 2, got %v\n", in)
+	if in != 1 {
+		t.Errorf("Expected 1, got %v\n", in)
 	}
 
 }

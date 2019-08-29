@@ -38,6 +38,16 @@ func Format(in interface{}) (*string,error) {
 	var header []string
 	var contents [][]string
 
+	/*switch t := in.(type) {
+	case types.Slice:
+		fmt.Printf("incident\n")
+	default:
+		fmt.Printf("Type is %v\n",t)
+	}
+	if a, ok := in.(servicenowStore.Incident); ok {
+		fmt.Printf("type is slice %v\n",a)
+	}*/
+
 	val := reflect.ValueOf(in)
 
 	// Depending on the input type, parse the values

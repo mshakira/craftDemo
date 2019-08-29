@@ -126,7 +126,7 @@ func walkIncs(ctx context.Context, report []Incident) (chan map[string]int, erro
 // Since input and outbound channels are same, we can compose this any number of times
 // No need to close out channel because it is used by multiple go routines. Main has to close it
 // For the same reason, we do not need context or done channels
-func mergeIncs(incs chan map[string]int, out chan map[string]int) {
+func mergeIncs(ctx context.Context, incs chan map[string]int, out chan map[string]int) {
 	sev := make(map[string]int)
 	for obj := range incs {
 		for k, v := range obj {
@@ -139,7 +139,11 @@ func mergeIncs(incs chan map[string]int, out chan map[string]int) {
 		}
 	}
 	// send aggregated value
-	out <- sev
+	select {
+		case out <- sev:
+		case <-ctx.Done():
+	}
+	return
 }
 
 // Generate aggregated report based on priority
@@ -171,7 +175,7 @@ func generateAggReportPriority(report []Incident) (sum *[]PrioritySum,err error 
 	// spawn NumGoRoutines times mergeIncs()
 	for i := 0; i < NumGoRoutines; i++ {
 		go func() {
-			mergeIncs(incs, c)
+			mergeIncs(ctx, incs, c)
 			wg.Done()
 		}()
 	}
@@ -184,10 +188,10 @@ func generateAggReportPriority(report []Incident) (sum *[]PrioritySum,err error 
 
 	// final merge - call mergeIncs one more time for final merge
 	// make sure to close the channel
-	final := make(chan map[string]int)
+	final := make(chan map[string]int,1)
 	go func() {
 		defer close(final)
-		mergeIncs(c, final)
+		mergeIncs(ctx, c, final)
 	}()
 
 	// read the final channel and create []PrioritySum struct
