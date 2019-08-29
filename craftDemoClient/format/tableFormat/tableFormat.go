@@ -27,8 +27,6 @@ To print in table format, we need following details
 3) Column values
  */
 func Format(in interface{}) (*string,error) {
-	// output format string
-	var format string
 
 	// Initialize
 	//    1) Max width of each column
@@ -37,6 +35,77 @@ func Format(in interface{}) (*string,error) {
 	m := make(map[string]int)
 	var header []string
 	var contents [][]string
+
+	err := ExtractContents(in,m,&header,&contents)
+
+	if err != nil {
+		return nil, err
+	}
+
+	// output format string
+	var format string
+
+	format += PrintHeader(m,&header)
+	format += PrintContents(m,&header,&contents)
+
+	return &format, nil
+}
+
+func PrintContents(m map[string]int,header *[]string,contents *[][]string) string {
+	// print contents
+	var format string
+	// Printf format string
+	str := strings.Repeat("%-*s ",len(*header))
+	for mn:= range *contents {
+		row := (*contents)[mn]
+
+		var rowFmt []interface{}
+		for n := range *header {
+			rowFmt = append(rowFmt,m[(*header)[n]]+ColumnPadding)
+			if len(row[n]) > MaxColumnLength {
+				rowFmt = append(rowFmt, row[n][:MaxColumnLength])
+			} else {
+				rowFmt = append(rowFmt, row[n])
+			}
+		}
+		format += fmt.Sprintf(str + "\n", rowFmt...)
+	}
+
+	return format
+}
+
+func PrintHeader(m map[string]int,header *[]string) string {
+	var headerFmt []interface{}
+	var format string
+	total := 0
+	for n := range *header {
+		// If length of column is > MaxColumnLength, replace it with MaxColumnLength
+		if m[(*header)[n]] > MaxColumnLength {
+			m[(*header)[n]] = MaxColumnLength
+		}
+		total += m[(*header)[n]] + 1 + ColumnPadding
+		// append max_width and column string to interface
+		headerFmt = append(headerFmt,m[(*header)[n]]+ColumnPadding)
+		// if column width is more than MaxColumnLength, truncate it
+		if len((*header)[n]) > MaxColumnLength {
+			headerFmt = append(headerFmt, (*header)[n][:MaxColumnLength])
+		} else {
+			headerFmt = append(headerFmt, (*header)[n])
+		}
+	}
+	// Printf format string
+	str := strings.Repeat("%-*s ",len(*header))
+
+	// print the heading
+	format += fmt.Sprintf(str + "\n", headerFmt...)
+
+	// print ##################
+	format += fmt.Sprintf(strings.Repeat("#",total) + "\n")
+
+	return format
+}
+
+func ExtractContents(in interface{},m map[string]int,header *[]string,contents *[][]string)  error{
 
 	/*switch t := in.(type) {
 	case types.Slice:
@@ -64,7 +133,7 @@ func Format(in interface{}) (*string,error) {
 			case "struct":
 				if j == 0 {
 					//fmt.Printf("x is %d y is %d\n",val.Len(),v.NumField() )
-					contents = make([][]string, val.Len())
+					*contents = make([][]string, val.Len())
 				}
 				for i := 0; i < v.NumField(); i++ {
 					// get the value as string
@@ -77,16 +146,16 @@ func Format(in interface{}) (*string,error) {
 					case "int":
 						a = strconv.Itoa(v.Field(i).Interface().(int))
 					default:
-						return nil, errors.New("unsupported format")
+						return errors.New("unsupported format")
 					}
 
 					// add headings into array in the order
 					if j == 0 {
-						header = append(header, typeOfS.Field(i).Name)
+						*header = append(*header, typeOfS.Field(i).Name)
 					}
 
 					// add contents into two dimensional slice
-					contents[j] = append(contents[j], a)
+					(*contents)[j] = append((*contents)[j], a)
 					if val, ok := m[typeOfS.Field(i).Name]; ok {
 						// find the max length of a column
 						if len(a) > val {
@@ -102,55 +171,11 @@ func Format(in interface{}) (*string,error) {
 					}
 				}
 			default:
-				return nil, errors.New("unsupported format")
+				return errors.New("unsupported format")
 			}
 		}
 	default:
-		return nil, errors.New("unsupported format")
+		return  errors.New("unsupported format")
 	}
-
-	// interface to hold multiple data types.
-	// We need to hold integer and string for Printf format
-	// Printf("%*-s",15,str)
-	var inter []interface{}
-	total := 0
-	for n := range header {
-		// If length of column is > MaxColumnLength, replace it with MaxColumnLength
-		if m[header[n]] > MaxColumnLength {
-			m[header[n]] = MaxColumnLength
-		}
-		total += m[header[n]] + 1 + ColumnPadding
-		// append max_width and column string to interface
-		inter = append(inter,m[header[n]]+ColumnPadding)
-		// if column width is more than MaxColumnLength, truncate it
-		if len(header[n]) > MaxColumnLength {
-			inter = append(inter, header[n][:MaxColumnLength])
-		} else {
-			inter = append(inter, header[n])
-		}
-	}
-	// Printf format string
-	str := strings.Repeat("%-*s ",len(header))
-
-	// print the heading
-	format += fmt.Sprintf(str + "\n",inter...)
-	// print ##################
-	format += fmt.Sprintf(strings.Repeat("#",total) + "\n")
-	// print contents
-	for mn:= range contents {
-		row := contents[mn]
-
-		var inter []interface{}
-		for n := range header {
-			inter = append(inter,m[header[n]]+ColumnPadding)
-			if len(row[n]) > MaxColumnLength {
-				inter = append(inter, row[n][:MaxColumnLength])
-			} else {
-				inter = append(inter, row[n])
-			}
-		}
-		format += fmt.Sprintf(str + "\n",inter...)
-	}
-
-	return &format, nil
+	return nil
 }
