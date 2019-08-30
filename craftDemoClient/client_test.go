@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -31,6 +32,31 @@ func TestWalkIncs(t *testing.T) {
 	}
 }
 
+func TestGetResponse(t *testing.T) {
+	// failure case
+	res, err := GetResponse("not_found")
+	if err == nil {
+		t.Errorf("Expected error, got nil")
+	}
+	if res != nil {
+		t.Errorf("Expected response, got nil")
+	}
+
+	// success case
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintln(w, "Hello, World")
+	}))
+	defer ts.Close()
+	res, err = GetResponse(ts.URL)
+	if err != nil {
+		t.Errorf("Expected nil, got %v\n", err)
+	}
+	if res == nil {
+		t.Errorf("Expected response, got nil")
+	}
+
+}
+
 func TestValidateResponse(t *testing.T) {
 	handler := func(w http.ResponseWriter, r *http.Request) {
 		io.WriteString(w, "<html><body>Hello World!</body></html>")
@@ -52,9 +78,57 @@ func TestValidateResponse(t *testing.T) {
 	// content type
 	resp.StatusCode = 200
 	resp.Header["Content-Type"][0] = "text/html; charset=utf-8"
+	err = ValidateResponse(resp)
 	if err == nil {
 		t.Errorf("Expected content-type mismatch error")
 	}
+
+	// content length
+	resp.Header["Content-Type"][0] = "application/json"
+		resp.Header["Content-Length"] = []string{"50"}
+	err = ValidateResponse(resp)
+	if err == nil {
+		t.Errorf("Expected error, got no error" )
+	}
+}
+
+func TestParseBody(t *testing.T) {
+	// failure case
+	handler := func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, "<html><body>Hello World!</body></html>")
+	}
+
+	req := httptest.NewRequest("GET", "http://example.com/foo", nil)
+	w := httptest.NewRecorder()
+	handler(w, req)
+
+	resp := w.Result()
+	incidents, err := ParseBody(resp)
+	if err == nil {
+		t.Errorf("Expected error, got no error")
+	}
+	if incidents != nil {
+		t.Errorf("Expected nil, got %v\n", incidents )
+	}
+
+	// success case
+	handler = func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, `{"Name":"ServiceNowQuery","Report":[{"number":"INC1234"}]}`)
+	}
+
+	//req := httptest.NewRequest("GET", "http://example.com/foo", nil)
+	w = httptest.NewRecorder()
+	handler(w, req)
+
+	resp = w.Result()
+	incidents, err = ParseBody(resp)
+	if err != nil {
+		t.Errorf("Expected nil, got error %v\n",err)
+	}
+	if incidents == nil {
+		t.Errorf("Expected data, got nil" )
+	}
+
 }
 
 func TestMergeIncs(t *testing.T) {

@@ -11,7 +11,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"runtime"
 	"strconv"
 	"sync"
 	"time"
@@ -45,14 +44,9 @@ type PrioritySum struct {
 	Sum      int
 }
 
-// To verify if go routine leaks are there
-func countGoRoutines() int {
-	return runtime.NumGoroutine()
-}
-
 // Initialize httpclient and request the given url
 // Retry 5 times, while connecting to the server incase of error
-func GetResponse(url string) (res *http.Response) {
+func GetResponse(url string) (res *http.Response, err error) {
 	// InsecureSkipVerify to false for production
 	tr := &http.Transport{
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
@@ -63,7 +57,7 @@ func GetResponse(url string) (res *http.Response) {
 	}
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
-		log.Fatal(err)
+		return nil, err
 	}
 
 	retry := RETRY
@@ -73,14 +67,14 @@ func GetResponse(url string) (res *http.Response) {
 		res, getErr = client.Do(req)
 		if getErr != nil {
 			fmt.Printf("Attempt %d %v\n", i, getErr)
-			if i > retry {
-				log.Fatal(getErr)
+			if i >= retry {
+				return nil, getErr
 			}
 		} else {
 			retry = 0
 		}
 	}
-	return res
+	return res, nil
 }
 
 // Validate the response based on response header
@@ -204,27 +198,10 @@ func GenerateAggReportPriority(report []Incident) (sum *[]PrioritySum,err error 
 	return &sumObj, nil
 }
 
-func main() {
-	// get url as first arg
-	url := os.Args[1]
-
-	// get the response using http client
-	res := GetResponse(url)
-
-	// validate response based on headers
-	respErr := ValidateResponse(res)
-	if respErr != nil {
-		log.Fatal(respErr)
-	}
-
-	// test initial no of goroutines
-	fmt.Printf("Goroutine count %d\n", countGoRoutines())
-
-	// Read the body
-	// TODO - split readAll
+func ParseBody(res *http.Response) (*Incidents, error) {
 	body, readErr := ioutil.ReadAll(res.Body)
 	if readErr != nil {
-		log.Fatal(readErr)
+		return nil, readErr
 	}
 	defer res.Body.Close()
 
@@ -232,18 +209,41 @@ func main() {
 	var incidents Incidents
 	jsonErr := json.Unmarshal(body, &incidents)
 	if jsonErr != nil {
-		log.Fatal(jsonErr)
+		return nil, jsonErr
+	}
+	return &incidents, nil
+}
+
+func main() {
+	// get url as first arg
+	url := os.Args[1]
+
+	// get the response using http client
+	res, err := GetResponse(url)
+	if err != nil {
+		log.Fatal(err)
+	}
+	// validate response based on headers
+	respErr := ValidateResponse(res)
+	if respErr != nil {
+		log.Fatal(respErr)
+	}
+
+	// Read the body
+	incidents, err := ParseBody(res)
+	if err != nil {
+		log.Fatal(err)
 	}
 
 	// print the tableFormat of the incidents report
-	tableFmt, err := tableFormat.Format(incidents.Report)
+	tableFmt, err := tableFormat.Format((*incidents).Report)
 	if err != nil {
 		log.Fatal(err)
 	}
 	fmt.Printf("%s\n",*tableFmt)
 
 	// generate aggregated report based on priority
-	aggReport, err := GenerateAggReportPriority(incidents.Report)
+	aggReport, err := GenerateAggReportPriority((*incidents).Report)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -255,7 +255,7 @@ func main() {
 	}
 
 	// print the final count of go routines
-	fmt.Printf("Goroutine count %d\n",countGoRoutines())
+	// fmt.Printf("Goroutine count %d\n",countGoRoutines())
 	//pprof.Lookup("goroutine").WriteTo(os.Stdout, 2)
 
 }
