@@ -2,7 +2,6 @@ package servicenowStore
 
 import (
 	"encoding/json"
-	"fmt"
 	"io/ioutil"
 	"os"
 )
@@ -39,7 +38,6 @@ func Init(file string) (*ServicenowStore, error){
 	} else { // use default file
 		snst.File = "incidents.json"
 	}
-	fmt.Printf("ServicenowStore initiated\n")
 	// initialize session with serviceNow store
 	return &snst, nil
 }

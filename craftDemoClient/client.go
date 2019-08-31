@@ -5,10 +5,9 @@ import (
 	"craftDemoClient/format/tableFormat"
 	"crypto/tls"
 	"encoding/json"
-	"errors"
 	"fmt"
+	log "github.com/Sirupsen/logrus"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"os"
 	"strconv"
@@ -66,7 +65,7 @@ func GetResponse(url string) (res *http.Response, err error) {
 		// make the request
 		res, getErr = client.Do(req)
 		if getErr != nil {
-			fmt.Printf("Attempt %d %v\n", i, getErr)
+			log.Warn("Attempt ", i, getErr)
 			if i >= retry {
 				return nil, getErr
 			}
@@ -82,14 +81,14 @@ func ValidateResponse(res *http.Response) (err error) {
 	var resLength int
 	// non 200 errors
 	if res.StatusCode != 200 {
-		err = errors.New(fmt.Sprintf("Received %d status code\n", res.StatusCode))
+		err = fmt.Errorf("Received %d status code\n", res.StatusCode)
 	} else if res.Header["Content-Type"][0] != "application/json" {
-		err = errors.New(fmt.Sprintf("Content type not spplication/json. Received => %s\n", res.Header["Content-Type"][0]))
+		err = fmt.Errorf("Content type not spplication/json. Received => %s\n", res.Header["Content-Type"][0])
 	} else {
 		if len(res.Header["Content-Length"]) > 0 {
 			resLength, err = strconv.Atoi(res.Header["Content-Length"][0])
 			if err == nil && resLength != 905 {
-				err = errors.New(fmt.Sprintf("content-Length mismatch 905 vs %d\n", resLength))
+				err = fmt.Errorf("content-Length mismatch 905 vs %d\n", resLength)
 			}
 		}
 	}
@@ -215,6 +214,12 @@ func ParseBody(res *http.Response) (*Incidents, error) {
 }
 
 func main() {
+	// initialize logging
+	Formatter := new(log.TextFormatter)
+	Formatter.TimestampFormat = "02-01-2006 15:04:05"
+	Formatter.FullTimestamp = true
+	log.SetFormatter(Formatter)
+
 	// get url as first arg
 	url := os.Args[1]
 
@@ -240,7 +245,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Printf("%s\n",*tableFmt)
+	fmt.Println(*tableFmt)
 
 	// generate aggregated report based on priority
 	aggReport, err := GenerateAggReportPriority((*incidents).Report)
@@ -249,7 +254,7 @@ func main() {
 	}
 
 	aggTableFmt, err := tableFormat.Format(*aggReport)
-	fmt.Printf("%s\n",*aggTableFmt)
+	fmt.Println(*aggTableFmt)
 	if err != nil {
 		log.Fatal(err)
 	}

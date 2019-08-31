@@ -46,3 +46,8 @@ func TestHttpHandler (t *testing.T) {
 			rr.Body.String(), expected)
 	}*/
 }
+
+/*func TestIncidentServer_Run(t *testing.T) {
+	incidentServer := IncidentServer{}
+	incidentServer.snStore, _ = servicenowStore.Init("")
+}*/
