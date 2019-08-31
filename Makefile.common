@@ -1,0 +1,244 @@
+# A common Makefile that includes rules to be reused in different projects.
+
+# Example usage :
+# Create the main Makefile in the root project directory.
+# include Makefile.common
+# customTarget:
+# 	@echo ">> Running customTarget"
+#
+
+# Ensure GOBIN is not set during build so that package is installed to the correct path
+#    The bin/ directory holds compiled commands.
+#    Each command is named for its source directory, but only the final element, not the entire path.
+#    That is, the command with source in DIR/src/foo/quux is installed into DIR/bin/quux, not DIR/bin/foo/quux.
+#    The foo/ is stripped so that you can add DIR/bin to your PATH to get at the installed commands.
+#    If the GOBIN environment variable is set, commands are installed to the directory it names instead of DIR/bin.
+#
+#    Source : http://golang.org/cmd/go/#hdr-GOPATH_environment_variable
+unexport GOBIN
+
+PREFIX                  ?= $(shell pwd)
+BIN_DIR                 ?= $(shell pwd)
+DOCKER_IMAGE_TAG        ?= $(subst /,-,$(shell git rev-parse --abbrev-ref HEAD))
+DOCKERFILE_PATH         ?= ./
+DOCKER_REPO             ?= $(L1)/$(L2)/$(GIT_REPO)/service
+DOCKER_IMAGE_NAME       ?= $(L1)/$(L2)/$(GIT_REPO)/service/$(GIT_REPO)
+DOCKER_ARCHS            ?= amd64
+
+THIS_PACKAGE_BINARY        := $(PREFIX)/bin/
+pkgs          = ./...
+
+BUILD_DOCKER_ARCHS = $(addprefix common-docker-,$(DOCKER_ARCHS))
+PUBLISH_DOCKER_ARCHS = $(addprefix common-docker-publish-,$(DOCKER_ARCHS))
+TAG_DOCKER_ARCHS = $(addprefix common-docker-tag-latest-,$(DOCKER_ARCHS))
+
+GO           ?= go
+GOFMT        ?= $(GO)fmt
+FIRST_GOPATH := $(firstword $(subst :, ,$(shell $(GO) env GOPATH)))
+GOOPTS       ?=
+GOHOSTOS     ?= $(shell $(GO) env GOHOSTOS)
+GOHOSTARCH   ?= $(shell $(GO) env GOHOSTARCH)
+
+GO_VERSION        ?= $(shell $(GO) version)
+GO_VERSION_NUMBER ?= $(word 3, $(GO_VERSION))
+PRE_GO_111        ?= $(shell echo $(GO_VERSION_NUMBER) | grep -E 'go1\.(10|[0-9])\.')
+
+
+ifneq (, $(PRE_GO_111))
+	ifneq (,$(wildcard go.mod))
+    		ifneq (,$(wildcard vendor))
+    			$(warning This repository requires Go >= 1.11 because of Go modules)
+    			$(warning Some recipes may not work as expected as the current Go runtime is '$(GO_VERSION_NUMBER)')
+    		endif
+   	endif
+endif
+
+# build binaries based on OS
+ifeq (arm, $(GOHOSTARCH))
+	GOHOSTARM ?= $(shell GOARM= $(GO) env GOARM)
+	GO_BUILD_PLATFORM ?= $(GOHOSTOS)-$(GOHOSTARCH)v$(GOHOSTARM)
+else
+	GO_BUILD_PLATFORM ?= $(GOHOSTOS)-$(GOHOSTARCH)
+endif
+
+
+GOLANGCI_LINT :=
+GOLANGCI_LINT_OPTS ?=
+GOLANGCI_LINT_VERSION ?= v1.16.0
+# golangci-lint only supports linux, darwin and windows platforms on i386/amd64.
+# windows isn't included here because of the path separator being different.
+ifeq ($(GOHOSTOS),$(filter $(GOHOSTOS),linux darwin))
+	ifeq ($(GOHOSTARCH),$(filter $(GOHOSTARCH),amd64 i386))
+		GOLANGCI_LINT := $(FIRST_GOPATH)/bin/golangci-lint
+	endif
+endif
+
+
+
+ifeq ($(GOHOSTARCH),amd64)
+	ifeq ($(GOHOSTOS),$(filter $(GOHOSTOS),linux freebsd darwin windows))
+		# Only supported on amd64
+		test-flags := -race -v -coverprofile=coverage.txt -covermode=atomic
+		# we need to inject docker compose endpoint for IDPS during tests in Jenkins (or when APP_ENV=jenkins)
+		ifeq (jenkins,$(APP_ENV))
+			test-flags := $(test-flags) -ldflags="-X github.intuit.com/data-eventbus/go-sdk.idpsUrl=http://idps-sidecar:8082/api"
+		endif
+	endif
+endif
+
+# This rule is used to forward a target like "build" to "common-build".  This
+# allows a new "build" target to be defined in a Makefile which includes this
+# one and override "common-build" without override warnings.
+%: common-% ;
+
+.PHONY: common-all
+# removed vet for now
+common-all: precheck style build test codecov
+
+.PHONY: common-style
+common-style:
+	@echo ">> checking code style"
+	@fmtRes=$$($(GOFMT) -d $$(find . -path ./vendor -prune -o -name '*.go' -print)); \
+	if [ -n "$${fmtRes}" ]; then \
+		echo "gofmt checking failed!"; echo "$${fmtRes}"; echo; \
+		echo "Please ensure you are using $$($(GO) version) for formatting code."; \
+		exit 1; \
+	fi
+
+.PHONY: common-check_license
+common-check_license:
+	@echo ">> checking license header"
+	@licRes=$$(for file in $$(find . -type f -iname '*.go' ! -path './vendor/*') ; do \
+               awk 'NR<=3' $$file | grep -Eq "(Copyright|generated|GENERATED)" || echo $$file; \
+       done); \
+       if [ -n "$${licRes}" ]; then \
+               echo "license header checking failed:"; echo "$${licRes}"; \
+               exit 1; \
+       fi
+
+.PHONY: common-deps
+common-deps:
+	@echo ">> getting dependencies"
+	$(GO) mod download
+
+.PHONY: common-test-short
+common-test-short:
+	@echo ">> running short tests"
+	$(GO) test -short $(GOOPTS) $(pkgs)
+
+.PHONY: common-test
+common-test:
+	@echo ">> running all tests"
+	go test $(test-flags) $(GOOPTS)
+
+.PHONY: common-codecov
+common-codecov:
+	@echo ">> Uploading to codecov"
+ifeq (jenkins,$(APP_ENV))
+	curl -s https://codecov.tools.a.intuit.com/bash | bash -s - -t $(CODECOV_TOKEN) -F
+else
+	@echo ">> skipping due to env"
+endif
+
+.PHONY: common-format
+common-format:
+	@echo ">> formatting code"
+	$(GO) fmt $(pkgs)
+
+.PHONY: common-vet
+common-vet:
+	@echo ">> vetting code"
+	$(GO) vet $(GOOPTS) $(pkgs)
+
+.PHONY: common-lint
+common-lint: $(GOLANGCI_LINT)
+ifdef GOLANGCI_LINT
+	@echo ">> running golangci-lint"
+# 'go list' needs to be executed before staticcheck to prepopulate the modules cache.
+# Otherwise staticcheck might fail randomly for some reason not yet explained.
+	$(GO) list -e -compiled -test=true -export=false -deps=true -find=false -tags= -- ./... > /dev/null
+	$(GOLANGCI_LINT) run $(GOLANGCI_LINT_OPTS) $(pkgs)
+endif
+
+# For backward-compatibility.
+.PHONY: common-staticcheck
+common-staticcheck: lint
+
+.PHONY: common-clean
+common-clean:
+	@echo ">> cleaning up binaries and coverage results"
+	rm -rf $(THIS_PACKAGE_BINARY)
+	rm -f coverage.*
+
+.PHONY: common-unused
+common-unused:
+	@echo ">> running check for unused/missing packages in go.mod"
+	$(GO) mod tidy
+	@git diff --exit-code -- go.sum go.mod
+
+.PHONY: common-build	
+common-build: $(GIT_REPO)
+	@echo ">> building binaries"
+	@echo ">> build path - $(THIS_PACKAGE_BINARY)"
+ifneq (,$(GIT_USERNAME))
+	echo "machine github.intuit.com login $(GIT_USERNAME) password $(GIT_PASSWORD)" >> ~/.netrc
+endif
+	env GOBIN=$(THIS_PACKAGE_BINARY) GOOS=$(GOHOSTOS) GOARCH=$(GOARCH) $(GO) install $(pkgs)
+
+.PHONY: common-tarball
+common-tarball: $(GIT_REPO)
+	@echo ">> building release tarball"
+	$(THIS_PACKAGE_BINARY) tarball --prefix $(PREFIX) $(BIN_DIR)
+
+.PHONY: common-docker $(BUILD_DOCKER_ARCHS)
+common-docker: $(BUILD_DOCKER_ARCHS)
+$(BUILD_DOCKER_ARCHS): common-docker-%:
+	docker build -t "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME)-linux-$*:$(DOCKER_IMAGE_TAG)" \
+		--build-arg ARCH="$*" \
+		--build-arg OS="linux" \
+		$(DOCKERFILE_PATH)
+
+.PHONY: common-docker-publish $(PUBLISH_DOCKER_ARCHS)
+common-docker-publish: $(PUBLISH_DOCKER_ARCHS)
+$(PUBLISH_DOCKER_ARCHS): common-docker-publish-%:
+	docker push "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME)-linux-$*:$(DOCKER_IMAGE_TAG)"
+
+.PHONY: common-docker-tag-latest $(TAG_DOCKER_ARCHS)
+common-docker-tag-latest: $(TAG_DOCKER_ARCHS)
+$(TAG_DOCKER_ARCHS): common-docker-tag-latest-%:
+	docker tag "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME)-linux-$*:$(DOCKER_IMAGE_TAG)" "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME)-linux-$*:latest"
+
+.PHONY: common-docker-manifest
+common-docker-manifest:
+	DOCKER_CLI_EXPERIMENTAL=enabled docker manifest create -a "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME):$(DOCKER_IMAGE_TAG)" $(foreach ARCH,$(DOCKER_ARCHS),$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME)-linux-$(ARCH):$(DOCKER_IMAGE_TAG))
+	DOCKER_CLI_EXPERIMENTAL=enabled docker manifest push "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME):$(DOCKER_IMAGE_TAG)"
+
+.PHONY: $(GIT_REPO)
+$(GIT_REPO): $(THIS_PACKAGE_BINARY)
+
+$(THIS_PACKAGE_BINARY):
+	mkdir -p $(THIS_PACKAGE_BINARY)/
+
+ifdef GOLANGCI_LINT
+$(GOLANGCI_LINT):
+	mkdir -p $(FIRST_GOPATH)/bin
+	curl -sfL https://raw.githubusercontent.com/golangci/golangci-lint/$(GOLANGCI_LINT_VERSION)/install.sh \
+		| sed -e '/install -d/d' \
+		| sh -s -- -b $(FIRST_GOPATH)/bin $(GOLANGCI_LINT_VERSION)
+endif
+
+.PHONY: precheck
+precheck::
+
+define PRECHECK_COMMAND_template =
+precheck:: $(1)_precheck
+
+PRECHECK_COMMAND_$(1) ?= $(1) $$(strip $$(PRECHECK_OPTIONS_$(1)))
+.PHONY: $(1)_precheck
+$(1)_precheck:
+	@if ! $$(PRECHECK_COMMAND_$(1)) 1>/dev/null 2>&1; then \
+		echo "Execution of '$$(PRECHECK_COMMAND_$(1))' command failed. Is $(1) installed?"; \
+		exit 1; \
+	fi
+endef
+

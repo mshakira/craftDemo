@@ -42,7 +42,3 @@ func TestGetList(t *testing.T) {
 		t.Errorf("Expected error, got %v", err)
 	}
 }
-
-
-
-
