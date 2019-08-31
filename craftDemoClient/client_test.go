@@ -85,10 +85,10 @@ func TestValidateResponse(t *testing.T) {
 
 	// content length
 	resp.Header["Content-Type"][0] = "application/json"
-		resp.Header["Content-Length"] = []string{"50"}
+	resp.Header["Content-Length"] = []string{"50"}
 	err = ValidateResponse(resp)
 	if err == nil {
-		t.Errorf("Expected error, got no error" )
+		t.Errorf("Expected error, got no error")
 	}
 }
 
@@ -108,7 +108,7 @@ func TestParseBody(t *testing.T) {
 		t.Errorf("Expected error, got no error")
 	}
 	if incidents != nil {
-		t.Errorf("Expected nil, got %v\n", incidents )
+		t.Errorf("Expected nil, got %v\n", incidents)
 	}
 
 	// success case
@@ -123,10 +123,10 @@ func TestParseBody(t *testing.T) {
 	resp = w.Result()
 	incidents, err = ParseBody(resp)
 	if err != nil {
-		t.Errorf("Expected nil, got error %v\n",err)
+		t.Errorf("Expected nil, got error %v\n", err)
 	}
 	if incidents == nil {
-		t.Errorf("Expected data, got nil" )
+		t.Errorf("Expected data, got nil")
 	}
 
 }
@@ -150,7 +150,7 @@ func TestMergeIncs(t *testing.T) {
 
 	go func() {
 		defer close(out)
-		mergeIncs(ctx,ch,out)
+		mergeIncs(ctx, ch, out)
 	}()
 
 	in := 0

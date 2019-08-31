@@ -16,8 +16,8 @@ import (
 )
 
 const (
-	TIMEOUT       = 2 // no of secs for url timeout
-	RETRY         = 5 // no of retries for url failures
+	TIMEOUT       = 2  // no of secs for url timeout
+	RETRY         = 5  // no of retries for url failures
 	NumGoRoutines = 10 // maximum number of go routines to fan out
 )
 
@@ -133,8 +133,8 @@ func mergeIncs(ctx context.Context, incs chan map[string]int, out chan map[strin
 	}
 	// send aggregated value
 	select {
-		case out <- sev:
-		case <-ctx.Done():
+	case out <- sev:
+	case <-ctx.Done():
 	}
 	return
 }
@@ -144,7 +144,7 @@ func mergeIncs(ctx context.Context, incs chan map[string]int, out chan map[strin
 // Fan out that channel to bounded go routines. This will merge the values and
 // send to single output channel
 // We can have any levels of merging depending on load
-func GenerateAggReportPriority(report []Incident) (sum *[]PrioritySum,err error ){
+func GenerateAggReportPriority(report []Incident) (sum *[]PrioritySum, err error) {
 
 	// create context with cancel to inform goroutines to exit
 	ctx, cancel := context.WithCancel(context.Background())
@@ -181,7 +181,7 @@ func GenerateAggReportPriority(report []Incident) (sum *[]PrioritySum,err error 
 
 	// final merge - call mergeIncs one more time for final merge
 	// make sure to close the channel
-	final := make(chan map[string]int,1)
+	final := make(chan map[string]int, 1)
 	go func() {
 		defer close(final)
 		mergeIncs(ctx, c, final)

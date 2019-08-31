@@ -8,9 +8,9 @@ func TestExtractContents(t *testing.T) {
 	// success case
 	type TestStruct struct {
 		Name string
-		Val int
+		Val  int
 	}
-	sliceData := []TestStruct{{"test", 1234},{"test123", 1234}}
+	sliceData := []TestStruct{{"test", 1234}, {"test123", 1234}}
 
 	m := make(map[string]int)
 	var header []string
@@ -61,7 +61,7 @@ func TestExtractContents(t *testing.T) {
 	}
 
 	// failure case 3 - unsupported data type
-	structFailData := []map[string]int{{"Val":1}}
+	structFailData := []map[string]int{{"Val": 1}}
 	err = ExtractContents(structFailData, m, &header, &contents)
 	if err == nil {
 		t.Errorf("Expected error, got %v\n", err)
@@ -69,20 +69,20 @@ func TestExtractContents(t *testing.T) {
 }
 
 func TestPrintHeader(t *testing.T) {
-	m := map[string]int{"Name":4}
+	m := map[string]int{"Name": 4}
 	header := []string{"Name"}
 
-	str := PrintHeader(m,&header)
+	str := PrintHeader(m, &header)
 	testStr := "Name   \n#######\n"
 
 	if str != testStr {
 		t.Errorf("Expected string %s, but got %s", testStr, str)
 	}
 
-	m = map[string]int{"Neque porro quisquam est qui dolorem ipsum quia dolor sit amet, consectetur, adipisci velit":92}
+	m = map[string]int{"Neque porro quisquam est qui dolorem ipsum quia dolor sit amet, consectetur, adipisci velit": 92}
 	header = []string{"Neque porro quisquam est qui dolorem ipsum quia dolor sit amet, consectetur, adipisci velit"}
 
-	str = PrintHeader(m,&header)
+	str = PrintHeader(m, &header)
 	testStr = "Neque porro quisquam est qui dolorem ipsum quia dolor sit am   \n###############################################################\n"
 
 	if str != testStr {
@@ -92,26 +92,26 @@ func TestPrintHeader(t *testing.T) {
 }
 
 func TestPrintContents(t *testing.T) {
-	m := map[string]int{"Name":4}
+	m := map[string]int{"Name": 4}
 	header := []string{"Name"}
 
 	str := "test"
 	contents := [][]string{{str}}
 
-	fmtStr := PrintContents(m,&header,&contents)
+	fmtStr := PrintContents(m, &header, &contents)
 
 	expectedStr := "test   \n"
 	if fmtStr != expectedStr {
-		t.Errorf("Expected string %s, but got %s", expectedStr,fmtStr)
+		t.Errorf("Expected string %s, but got %s", expectedStr, fmtStr)
 	}
 
 	str = "Neque porro quisquam est qui dolorem ipsum quia dolor sit amet, consectetur, adipisci velit"
 	contents = [][]string{{str}}
-	fmtStr = PrintContents(m,&header,&contents)
+	fmtStr = PrintContents(m, &header, &contents)
 
 	expectedStr = "Neque porro quisquam est qui dolorem ipsum quia dolor sit am \n"
 	if fmtStr != expectedStr {
-		t.Errorf("Expected string %s, but got %s", expectedStr,fmtStr)
+		t.Errorf("Expected string %s, but got %s", expectedStr, fmtStr)
 	}
 
 }

@@ -7,8 +7,7 @@ import (
 	"testing"
 )
 
-
-func TestHttpHandler (t *testing.T) {
+func TestHttpHandler(t *testing.T) {
 	//
 	snst, _ = servicenowStore.Init("no_file.json")
 	req, err := http.NewRequest("GET", "/api/v1/list/incidents", nil)

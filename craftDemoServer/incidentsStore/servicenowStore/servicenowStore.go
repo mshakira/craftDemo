@@ -13,24 +13,24 @@ type ServicenowStore struct {
 
 // Entire Incidents object
 type Incidents struct {
-	Name    string `json:"Name"`
+	Name   string     `json:"Name"`
 	Report []Incident `json:"Report"`
 }
 
 // Individual incident object
 type Incident struct {
-	Number string `json:"number"`
-	AssignedTo string `json:"assigned_to"`
+	Number      string `json:"number"`
+	AssignedTo  string `json:"assigned_to"`
 	Description string `json:"description"`
-	State string `json:"state"`
-	Priority string `json:"priority"`
-	Severity string `json:"severity"`
+	State       string `json:"state"`
+	Priority    string `json:"priority"`
+	Severity    string `json:"severity"`
 }
 
-/* 
+/*
 Initializes the servicenow object with fileStore to read
- */
-func Init(file string) (*ServicenowStore, error){
+*/
+func Init(file string) (*ServicenowStore, error) {
 	var snst ServicenowStore
 	// for testing purpose, send file name
 	if file != "" {
@@ -46,8 +46,8 @@ func Init(file string) (*ServicenowStore, error){
 Add GetList method to ServicenowStore
 Read the file, extract json objects and map it to required struct
 Return final json
- */
-func (snst *ServicenowStore) GetList() (*[]byte, error)  {
+*/
+func (snst *ServicenowStore) GetList() (*[]byte, error) {
 	jsonFile, err := os.Open(snst.File)
 	// if we os.Open returns an error then handle it
 	if err != nil {
